@@ -1,0 +1,15 @@
+# Stage 1: Dify only. Point a Flux Kustomization at this folder (see platform/README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dify-lab
+resources:
+  - namespace.yaml
+  - helmrepository.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  # Dify chart values, read by the HelmRelease. Fixed name: Flux references it by name.
+  - name: dify-values
+    files:
+      - values.yaml=values/dify-lab.yaml
+    options:
+      disableNameSuffixHash: true

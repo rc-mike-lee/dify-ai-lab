@@ -1,0 +1,23 @@
+# Stage 2: the AI workload on top of Dify. Point a second Flux Kustomization at this folder,
+# with dependsOn: dify-platform (see lab/README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dify-lab
+resources:
+  - manifests/lab-supporting.yaml
+  - manifests/lab-driver.yaml
+configMapGenerator:
+  # Model provider routing for lab-litellm. Swap the file for another in providers/.
+  - name: lab-litellm-config
+    files:
+      - config.yaml=providers/anthropic.yaml
+patches:
+  # The driver needs a Dify app API key that only exists after the Copilot is built.
+  # Ship it suspended; remove this patch once lab-driver-key exists.
+  - target:
+      kind: CronJob
+      name: lab-driver
+    patch: |-
+      - op: add
+        path: /spec/suspend
+        value: true

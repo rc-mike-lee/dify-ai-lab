@@ -1,0 +1,39 @@
+# Dify 1.16.1 (chart 0.38.0), configured by platform/values/dify-lab.yaml (loaded as ConfigMap
+# `dify-values` by the kustomization). All credentials come from Secret `dify-secrets`,
+# which must exist BEFORE the first reconcile (see README.md); it is never stored in Git.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dify
+spec:
+  interval: 30m
+  timeout: 15m
+  chart:
+    spec:
+      chart: dify
+      version: "0.38.0"
+      sourceRef:
+        kind: HelmRepository
+        name: dify
+  install:
+    remediation:
+      retries: 2
+  upgrade:
+    remediation:
+      retries: 2
+  valuesFrom:
+    - kind: ConfigMap
+      name: dify-values
+      valuesKey: values.yaml
+    # Every credential comes from Secret dify-secrets (created by generate-secrets.sh, or your
+    # secrets tooling with the same keys) so none of the chart's public defaults are used.
+    - {kind: Secret, name: dify-secrets, valuesKey: appSecretKey,                targetPath: global.appSecretKey}
+    - {kind: Secret, name: dify-secrets, valuesKey: internalApiKey,              targetPath: api.auth.internalApiKey}
+    - {kind: Secret, name: dify-secrets, valuesKey: pluginDaemonServerKey,       targetPath: pluginDaemon.auth.serverKey}
+    - {kind: Secret, name: dify-secrets, valuesKey: agentBackendServerSecretKey, targetPath: agentBackend.auth.serverSecretKey}
+    - {kind: Secret, name: dify-secrets, valuesKey: sandboxApiKey,               targetPath: sandbox.auth.apiKey}
+    - {kind: Secret, name: dify-secrets, valuesKey: postgresPassword,            targetPath: postgresql.global.postgresql.auth.postgresPassword}
+    - {kind: Secret, name: dify-secrets, valuesKey: redisPassword,               targetPath: redis.auth.password}
+    - {kind: Secret, name: dify-secrets, valuesKey: weaviateApiKey,              targetPath: "weaviate.authentication.apikey.allowed_keys[0]"}
+    # Weaviate's env var takes priority over its config file, so it gets the same key.
+    - {kind: Secret, name: dify-secrets, valuesKey: weaviateApiKey,              targetPath: weaviate.env.AUTHENTICATION_APIKEY_ALLOWED_KEYS}

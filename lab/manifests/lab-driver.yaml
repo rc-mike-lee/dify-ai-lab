@@ -1,0 +1,88 @@
+# AI workload lab: traffic driver. Sends one support question to the Customer Support
+# Copilot every 15 minutes during business hours, so RoonCyber sees steady, realistic use.
+#   lab-driver -> dify (proxy) -> dify-api (agent) -> lab-litellm -> Anthropic
+#                                                  -> lab-mcp-crm -> lab-customer-db
+#                                                  -> weaviate (knowledge base)
+#
+# Apply LAST, after the Copilot exists in Dify and its API key is stored:
+#   kubectl create secret generic lab-driver-key -n dify-lab --from-literal=key="$(pbpaste)"
+#   kubectl apply -n dify-lab -f lab/manifests/lab-driver.yaml
+#   kubectl create job --from=cronjob/lab-driver lab-driver-check -n dify-lab   # one run now
+#
+# Change `timeZone` to yours. Agent apps only answer in streaming mode.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-driver
+  labels: {app: lab-driver, app.kubernetes.io/part-of: ai-lab}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-driver-prompts
+  labels: {app: lab-driver, app.kubernetes.io/part-of: ai-lab}
+data:
+  prompts.txt: |
+    Avery Chen says their invoice total looks wrong. What should I check and what should I tell them?
+    Jordan Patel can't reset their password; the email never arrives. How do I help?
+    Sam Okafor wants 25 more seats before month end. What plan are they on and what changes?
+    Riley Novak's renewal card was declined twice. Draft a reply.
+    Taylor Brooks says they were double charged for September. What's our refund process?
+    Drew Yamamoto wants to export all their account data. What are the steps?
+    Quinn Adeyemi needs help configuring SAML SSO. What do we need from them?
+    Rowan Ibrahim's hardware order hasn't shipped. Is this late and what should I do?
+    Summarize all open and pending tickets and suggest which to handle first.
+    What's the difference between a refund and a chargeback? Give me a one-line explanation for a customer.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lab-driver
+  labels: {app: lab-driver, app.kubernetes.io/part-of: ai-lab}
+spec:
+  schedule: "*/15 8-17 * * 1-5"
+  timeZone: America/New_York
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels: {app: lab-driver, app.kubernetes.io/part-of: ai-lab}
+        spec:
+          serviceAccountName: lab-driver
+          restartPolicy: Never
+          containers:
+            - name: driver
+              image: curlimages/curl:8.11.1
+              env:
+                - name: DIFY_KEY
+                  valueFrom:
+                    secretKeyRef: {name: lab-driver-key, key: key}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  N=$(grep -c . /prompts/prompts.txt)
+                  I=$(( $(date +%s) / 900 % N + 1 ))
+                  P=$(sed -n "${I}p" /prompts/prompts.txt | sed 's/"/\\"/g')
+                  echo "prompt $I/$N: $P"
+                  curl -sS -N -m 300 -X POST http://dify/v1/chat-messages \
+                    -H "Authorization: Bearer $DIFY_KEY" -H 'Content-Type: application/json' \
+                    -d "{\"inputs\":{},\"query\":\"$P\",\"response_mode\":\"streaming\",\"user\":\"support-agent-$I\"}" \
+                    -o /tmp/stream -w 'HTTP %{http_code}\n'
+                  echo "tool calls: $(grep -o '"tool": *"[^"]\+"' /tmp/stream | sort -u | tr '\n' ' ')"
+                  grep -q '"event": *"message_end"' /tmp/stream && echo "result: ok" || { echo "result: FAILED"; tail -c 400 /tmp/stream; exit 1; }
+              volumeMounts:
+                - {name: prompts, mountPath: /prompts}
+              resources:
+                requests: {cpu: "10m",  memory: "16Mi"}
+                limits:   {cpu: "100m", memory: "64Mi"}
+          volumes:
+            - name: prompts
+              configMap: {name: lab-driver-prompts}

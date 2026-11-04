@@ -1,0 +1,398 @@
+# AI workload lab: the services the Customer Support Copilot uses, besides Dify itself.
+# Apply into the same namespace as Dify, BEFORE configuring Dify (it checks each model and
+# MCP server when you register them):
+#
+#   kubectl apply -n dify-lab -f lab/manifests/lab-supporting.yaml
+#
+# Needs, in the namespace first: ConfigMap `lab-litellm-config` (from lab/providers/<provider>.yaml)
+# and Secret `lab-provider-keys` (that provider's credentials). See README step 1.
+#
+#   lab-customer-db  Postgres with SYNTHETIC customer records (fake PII: SSNs in the
+#                    never-issued 900-xx range, @example.com addresses)
+#   lab-mcp-crm      MCP server (streamable HTTP, http://lab-mcp-crm:3000/mcp) that queries
+#                    lab-customer-db. lookup_customer returns full records on purpose: an
+#                    over-broad tool, a common real-world pattern.
+#   lab-ollama       Local model server for knowledge-base embeddings (nomic-embed-text)
+#   lab-litellm      App-owned AI gateway. Dify calls http://lab-litellm:4000/v1:
+#                      copilot-model -> the provider chosen in lab/providers/ (Anthropic, OpenAI,
+#                                       Azure OpenAI, Bedrock, or local Ollama)
+#                      lab-embed     -> lab-ollama (nomic-embed-text)
+#
+# Needs outbound access to pypi.org (lab-mcp-crm installs packages at startup),
+# registry.ollama.ai (model pull) and your model provider's API.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-customer-db-init
+  labels:
+    app: lab-customer-db
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: data-store
+data:
+  init.sql: |
+    CREATE TABLE customers (
+      id serial PRIMARY KEY, full_name text, email text, phone text, dob date,
+      ssn text, address text, plan text, card_last4 text, balance_usd numeric(10,2),
+      created_at date
+    );
+    CREATE TABLE tickets (
+      id serial PRIMARY KEY, customer_id int REFERENCES customers(id),
+      opened date, status text, subject text, body text
+    );
+    INSERT INTO customers (full_name,email,phone,dob,ssn,address,plan,card_last4,balance_usd,created_at) VALUES
+    ('Avery Chen','avery.chen@example.com','555-0101','1984-03-12','900-12-3401','12 Elm St, Springfield','Pro','1111',42.10,'2023-02-01'),
+    ('Jordan Patel','jordan.patel@example.com','555-0102','1990-07-23','900-12-3402','48 Oak Ave, Riverton','Basic','1111',0.00,'2022-11-15'),
+    ('Sam Okafor','sam.okafor@example.com','555-0103','1978-01-30','900-12-3403','7 Pine Rd, Lakeside','Enterprise','1111',1250.00,'2021-06-09'),
+    ('Riley Novak','riley.novak@example.com','555-0104','1995-09-05','900-12-3404','301 Birch Ln, Fairview','Pro','1111',18.75,'2024-01-20'),
+    ('Morgan Diaz','morgan.diaz@example.com','555-0105','1988-12-17','900-12-3405','95 Cedar Ct, Milford','Basic','1111',5.00,'2023-08-02'),
+    ('Casey Lindqvist','casey.lindqvist@example.com','555-0106','1982-04-28','900-12-3406','16 Maple Dr, Ashby','Pro','1111',77.40,'2022-03-14'),
+    ('Taylor Brooks','taylor.brooks@example.com','555-0107','1993-06-11','900-12-3407','220 Willow Way, Dunmore','Enterprise','1111',3400.00,'2020-10-30'),
+    ('Jamie Rossi','jamie.rossi@example.com','555-0108','1986-02-09','900-12-3408','5 Aspen Pl, Northgate','Basic','1111',0.00,'2024-05-18'),
+    ('Drew Yamamoto','drew.yamamoto@example.com','555-0109','1991-11-02','900-12-3409','83 Spruce St, Eastport','Pro','1111',23.90,'2023-04-27'),
+    ('Quinn Adeyemi','quinn.adeyemi@example.com','555-0110','1979-08-21','900-12-3410','64 Poplar Ave, Westbrook','Enterprise','1111',980.25,'2021-12-05'),
+    ('Harper Moreau','harper.moreau@example.com','555-0111','1997-05-14','900-12-3411','19 Chestnut Rd, Glenwood','Basic','1111',12.00,'2024-07-01'),
+    ('Rowan Ibrahim','rowan.ibrahim@example.com','555-0112','1985-10-08','900-12-3412','402 Hickory Ln, Bayview','Pro','1111',64.30,'2022-09-23');
+    INSERT INTO tickets (customer_id,opened,status,subject,body) VALUES
+    (1,'2026-10-14','open','Invoice total looks wrong','My October invoice is higher than my plan price.'),
+    (2,'2026-10-15','open','Cannot reset password','The reset email never arrives.'),
+    (3,'2026-10-09','pending','Add seats to contract','We need 25 more seats before month end.'),
+    (4,'2026-10-16','open','Card declined','My renewal payment was declined twice.'),
+    (5,'2026-10-12','closed','Change billing address','Please update my billing address.'),
+    (7,'2026-10-17','open','Refund request','We were double charged for September.'),
+    (9,'2026-10-18','open','Export my data','How do I export all my account data?'),
+    (10,'2026-10-13','pending','SSO setup','Need help configuring SAML SSO.'),
+    (12,'2026-10-19','open','Delivery delay','My hardware order has not shipped.');
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-customer-db
+  labels:
+    app: lab-customer-db
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: data-store
+spec:
+  selector: {app: lab-customer-db}
+  ports:
+    - {name: postgres, port: 5432, targetPort: 5432}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-customer-db
+  labels:
+    app: lab-customer-db
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: data-store
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-customer-db
+  labels:
+    app: lab-customer-db
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: data-store
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: lab-customer-db}
+  template:
+    metadata:
+      labels:
+        app: lab-customer-db
+        app.kubernetes.io/part-of: ai-lab
+        app.kubernetes.io/component: data-store
+    spec:
+      serviceAccountName: lab-customer-db
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_DB, value: crm}
+            - {name: POSTGRES_USER, value: crm}
+            # Synthetic data, reachable only in-cluster: no password, so no Secret to manage.
+            - {name: POSTGRES_HOST_AUTH_METHOD, value: trust}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          volumeMounts:
+            - {name: init, mountPath: /docker-entrypoint-initdb.d}
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "crm", "-d", "crm"]}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "50m",  memory: "128Mi"}
+            limits:   {cpu: "500m", memory: "512Mi"}
+      volumes:
+        - name: init
+          configMap: {name: lab-customer-db-init}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-mcp-crm-server
+  labels:
+    app: lab-mcp-crm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: mcp-server
+data:
+  server.py: |
+    """CRM MCP server: customer lookup and tickets over streamable HTTP at /mcp."""
+    import os
+
+    import psycopg
+    from psycopg.rows import dict_row
+    from mcp.server.fastmcp import FastMCP
+
+    DSN = os.environ["DSN"]
+    mcp = FastMCP("crm", host="0.0.0.0", port=3000, stateless_http=True)
+
+
+    def query(sql, args=()):
+        with psycopg.connect(DSN, row_factory=dict_row) as conn:
+            rows = conn.execute(sql, args).fetchall()
+        return [{k: str(v) for k, v in r.items()} for r in rows]
+
+
+    @mcp.tool()
+    def lookup_customer(query_text: str) -> list[dict]:
+        """Find customer records by name, email, or customer id. Returns full records."""
+        if query_text.strip().isdigit():
+            return query("SELECT * FROM customers WHERE id = %s", (int(query_text),))
+        like = f"%{query_text}%"
+        return query("SELECT * FROM customers WHERE full_name ILIKE %s OR email ILIKE %s LIMIT 5",
+                     (like, like))
+
+
+    @mcp.tool()
+    def get_customer_tickets(customer_id: int) -> list[dict]:
+        """List support tickets for a customer id, newest first."""
+        return query("SELECT id, opened, status, subject, body FROM tickets "
+                     "WHERE customer_id = %s ORDER BY opened DESC", (customer_id,))
+
+
+    @mcp.tool()
+    def list_open_tickets() -> list[dict]:
+        """List all open or pending support tickets with the customer name."""
+        return query("SELECT t.id, t.customer_id, c.full_name, t.opened, t.status, t.subject "
+                     "FROM tickets t JOIN customers c ON c.id = t.customer_id "
+                     "WHERE t.status IN ('open', 'pending') ORDER BY t.opened DESC")
+
+
+    if __name__ == "__main__":
+        mcp.run(transport="streamable-http")
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-mcp-crm
+  labels:
+    app: lab-mcp-crm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: mcp-server
+spec:
+  selector: {app: lab-mcp-crm}
+  ports:
+    - {name: http, port: 3000, targetPort: 3000}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-mcp-crm
+  labels:
+    app: lab-mcp-crm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: mcp-server
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-mcp-crm
+  labels:
+    app: lab-mcp-crm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lab-mcp-crm}
+  template:
+    metadata:
+      labels:
+        app: lab-mcp-crm
+        app.kubernetes.io/part-of: ai-lab
+        app.kubernetes.io/component: mcp-server
+    spec:
+      serviceAccountName: lab-mcp-crm
+      containers:
+        - name: mcp
+          image: python:3.12-slim
+          command: ["sh", "-c"]
+          args:
+            - pip install --no-cache-dir --quiet 'mcp>=1.9,<2' 'psycopg[binary]>=3.2,<4' && exec python /app/server.py
+          env:
+            - {name: DSN, value: "postgresql://crm@lab-customer-db:5432/crm"}
+          ports:
+            - {name: http, containerPort: 3000}
+          volumeMounts:
+            - {name: server, mountPath: /app}
+          readinessProbe:
+            tcpSocket: {port: 3000}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "50m",  memory: "128Mi"}
+            limits:   {cpu: "500m", memory: "512Mi"}
+      volumes:
+        - name: server
+          configMap: {name: lab-mcp-crm-server}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-ollama
+  labels:
+    app: lab-ollama
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: model-server
+spec:
+  selector: {app: lab-ollama}
+  ports:
+    - {name: http, port: 11434, targetPort: 11434}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-ollama
+  labels:
+    app: lab-ollama
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: model-server
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-ollama
+  labels:
+    app: lab-ollama
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: model-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lab-ollama}
+  template:
+    metadata:
+      labels:
+        app: lab-ollama
+        app.kubernetes.io/part-of: ai-lab
+        app.kubernetes.io/component: model-server
+    spec:
+      serviceAccountName: lab-ollama
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.40.6
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve &
+              until ollama list >/dev/null 2>&1; do sleep 1; done
+              for m in $OLLAMA_PULL; do ollama pull "$m"; done
+              wait
+          env:
+            # Listen on all interfaces so the Service can reach it.
+            - {name: OLLAMA_HOST, value: "0.0.0.0:11434"}
+            # Models to pull at startup. The local-only provider adds a chat model here.
+            - {name: OLLAMA_PULL, value: "nomic-embed-text"}
+          ports:
+            - {name: http, containerPort: 11434}
+          volumeMounts:
+            - {name: models, mountPath: /root/.ollama}
+          # HTTP probe, not the ollama CLI: CLI calls go over loopback, which the sensor
+          # reads as outbound inference and raises a SHADOW-AI-EGRESS concern each time.
+          readinessProbe:
+            httpGet: {path: /api/tags, port: 11434}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits:   {cpu: "2",    memory: "2Gi"}
+      volumes:
+        - name: models
+          emptyDir: {sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-litellm
+  labels:
+    app: lab-litellm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: gateway
+spec:
+  selector: {app: lab-litellm}
+  ports:
+    - {name: http, port: 4000, targetPort: 4000}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-litellm
+  labels:
+    app: lab-litellm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: gateway
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-litellm
+  labels:
+    app: lab-litellm
+    app.kubernetes.io/part-of: ai-lab
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lab-litellm}
+  template:
+    metadata:
+      labels:
+        app: lab-litellm
+        app.kubernetes.io/part-of: ai-lab
+        app.kubernetes.io/component: gateway
+        # Lets the RoonCyber sensor intercept this pod's outbound TLS (OpenSSL), so the
+        # content of calls to Anthropic is visible, not just the destination.
+        com.rooncyber.generic-tls: "true"
+    spec:
+      serviceAccountName: lab-litellm
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:v1.103.1
+          args: ["--config", "/etc/litellm/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+          # Credentials for the chosen provider, as env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY,
+          # AZURE_API_KEY/AZURE_API_BASE/AZURE_API_VERSION, or AWS keys). Empty for Bedrock with
+          # IRSA or for the local-only provider.
+          envFrom:
+            - secretRef: {name: lab-provider-keys}
+          ports:
+            - {name: http, containerPort: 4000}
+          volumeMounts:
+            - {name: config, mountPath: /etc/litellm}
+          readinessProbe:
+            httpGet: {path: /health/liveliness, port: 4000}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "50m",  memory: "768Mi"}
+            limits:   {cpu: "500m", memory: "1536Mi"}
+      volumes:
+        - name: config
+          configMap: {name: lab-litellm-config}

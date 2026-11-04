@@ -1,0 +1,21 @@
+# Provider: none. Everything runs in the cluster on lab-ollama (untested for the agent).
+# No external model, so external-model findings (AGENTIC-EXFIL, MODEL-OUTPUT-LEAK, External
+# Model components) won't appear; shadow local inference, MCP and data access still do.
+# Secret:   kubectl create secret generic lab-provider-keys -n dify-lab      (empty)
+# Also pull a chat model that handles tool calls, and give Ollama more memory:
+#   kubectl set env deploy/lab-ollama -n dify-lab OLLAMA_PULL="nomic-embed-text qwen2.5:7b"
+#   kubectl set resources deploy/lab-ollama -n dify-lab --requests=memory=6Gi --limits=memory=10Gi
+# Expect slow answers on CPU (tens of seconds).
+model_list:
+  - model_name: copilot-model
+    litellm_params:
+      model: ollama_chat/qwen2.5:7b
+      api_base: http://lab-ollama:11434
+  # Knowledge-base embeddings always stay local, whatever the chat provider.
+  - model_name: lab-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://lab-ollama:11434
+    model_info: {mode: embedding}
+litellm_settings:
+  drop_params: true

@@ -1,0 +1,21 @@
+# Provider: Claude on Amazon Bedrock (untested).
+# Auth:     preferred, no key: an IAM role for lab-litellm's ServiceAccount (IRSA), see bedrock-irsa.md.
+#           Or AWS keys: kubectl create secret generic lab-provider-keys -n dify-lab \
+#             --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=...
+#           Either way the Secret must exist (it can be empty with IRSA:
+#             kubectl create secret generic lab-provider-keys -n dify-lab)
+# Model:    enable Claude Haiku under Bedrock "Model access", then copy its model ID or
+#           cross-region inference-profile ID (e.g. us.anthropic....) from the Bedrock console.
+model_list:
+  - model_name: copilot-model
+    litellm_params:
+      model: bedrock/<claude-haiku-model-or-inference-profile-id>
+      aws_region_name: us-east-1
+  # Knowledge-base embeddings always stay local, whatever the chat provider.
+  - model_name: lab-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://lab-ollama:11434
+    model_info: {mode: embedding}
+litellm_settings:
+  drop_params: true

@@ -1,0 +1,8 @@
+# Community Dify chart (the Dify project publishes no official chart).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: dify
+spec:
+  url: https://borispolonsky.github.io/dify-helm
+  interval: 24h

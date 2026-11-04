@@ -1,0 +1,135 @@
+# Dify values for the AI workload lab.
+# Chart: dify/dify 0.38.0 (Dify 1.16.1), from https://borispolonsky.github.io/dify-helm
+#
+# Install with platform/install-dify.sh (plain Helm) or the Flux HelmRelease in platform/.
+# Both replace every default credential in the chart with random values from Secret
+# `dify-secrets`, so this file contains no credentials. Don't install with this file alone:
+# the chart's built-in passwords and keys are published.
+#
+# What's changed from the chart defaults, and why:
+#   - Storage: api, worker and plugin-daemon volumes use ReadWriteOnce. The chart asks for
+#     ReadWriteMany, which most clusters (EKS by default) don't offer, so the pods sit Pending.
+#     api and worker share a volume, so api is pinned to worker's node and both use Recreate.
+#   - Footprint: postgres and redis run standalone (no read replicas); Weaviate gets 8Gi, not 32Gi.
+#   - Identity: one ServiceAccount per Dify component (the chart default is `default` for all).
+#   - Access: no ingress. Use `kubectl port-forward -n dify-lab svc/dify 8080:80`.
+#   - Resources: explicit requests/limits (the chart sets none).
+# The default StorageClass is used. Set storageClass below if your cluster needs another.
+
+api:
+  serviceAccount:
+    create: true
+  replicas: 1
+  # A replacement pod can't mount the RWO volume while the old one holds it, and
+  # RollingUpdate won't stop the old pod first, so updates would deadlock.
+  updateStrategy:
+    type: Recreate
+  persistence:
+    persistentVolumeClaim:
+      accessModes: ReadWriteOnce
+  # api and worker share pvc/dify (RWO), so they must run on the same node.
+  # The chart labels pods `component=worker`, not `app.kubernetes.io/component`.
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: component
+                operator: In
+                values: ["worker"]
+          topologyKey: kubernetes.io/hostname
+  resources:
+    requests: {cpu: "250m", memory: "1Gi"}
+    limits:   {cpu: "1",    memory: "2Gi"}
+
+worker:
+  serviceAccount:
+    create: true
+  replicas: 1
+  updateStrategy:
+    type: Recreate
+  persistence:
+    persistentVolumeClaim:
+      accessModes: ReadWriteOnce
+  resources:
+    requests: {cpu: "250m", memory: "1Gi"}
+    limits:   {cpu: "1",    memory: "2Gi"}
+
+beat:
+  serviceAccount:
+    create: true
+  resources:
+    requests: {cpu: "50m",  memory: "256Mi"}
+    limits:   {cpu: "200m", memory: "512Mi"}
+
+web:
+  serviceAccount:
+    create: true
+  replicas: 1
+  resources:
+    requests: {cpu: "100m", memory: "256Mi"}
+    limits:   {cpu: "500m", memory: "1Gi"}
+
+proxy:
+  serviceAccount:
+    create: true
+  resources:
+    requests: {cpu: "50m",  memory: "128Mi"}
+    limits:   {cpu: "200m", memory: "256Mi"}
+
+sandbox:
+  serviceAccount:
+    create: true
+  resources:
+    requests: {cpu: "100m", memory: "256Mi"}
+    limits:   {cpu: "500m", memory: "1Gi"}
+
+pluginDaemon:
+  serviceAccount:
+    create: true
+  updateStrategy:
+    type: Recreate
+  persistence:
+    persistentVolumeClaim:
+      accessModes: ReadWriteOnce
+  resources:
+    requests: {cpu: "100m", memory: "512Mi"}
+    limits:   {cpu: "500m", memory: "1Gi"}
+
+agentBackend:
+  serviceAccount:
+    create: true
+
+localSandbox:
+  serviceAccount:
+    create: true
+
+postgresql:
+  enabled: true
+  architecture: standalone
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests: {cpu: "250m", memory: "512Mi"}
+      limits:   {cpu: "1",    memory: "2Gi"}
+
+redis:
+  enabled: true
+  architecture: standalone
+  master:
+    persistence:
+      enabled: true
+      size: 4Gi
+    resources:
+      requests: {cpu: "100m", memory: "256Mi"}
+      limits:   {cpu: "500m", memory: "1Gi"}
+
+weaviate:
+  enabled: true
+  storage:
+    size: 8Gi
+  resources:
+    requests: {cpu: "250m", memory: "512Mi"}
+    limits:   {cpu: "1",    memory: "2Gi"}
