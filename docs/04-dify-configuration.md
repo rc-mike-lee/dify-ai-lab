@@ -42,6 +42,10 @@ step 2 running and sign in at http://localhost:8080.
 ### Agent app
 
 1. **Studio → Create → Create from blank → Agent**, named *Customer Support Copilot*.
+   The app's **Orchestrate** page shows a **LEGACY AGENT** badge. That's expected: Dify 1.16
+   labels this app type as legacy while it introduces a newer agent builder (**Agents**, marked
+   BETA, in the left sidebar). This lab is built and tested on the classic agent type; it works
+   fully, so ignore the badge and don't use the BETA Agents section for this lab.
 2. Model (top right): `copilot-model`.
 3. **Instructions:**
 

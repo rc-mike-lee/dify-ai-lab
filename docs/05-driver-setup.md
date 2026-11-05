@@ -46,7 +46,7 @@ whole chain works end to end.
 |---|---|---|
 | 15–30 min | Analyst Console, filter namespace `dify-lab` | SHADOW-MCP-SERVER on `lab-mcp-crm`; SHADOW-LOCAL-INFERENCE on `lab-ollama`; AGENTIC-EXFIL and MODEL-OUTPUT-LEAK when customer data reaches the external model; PII exposure |
 | A few hours | Component Catalog; AI Applications | `lab-litellm` as AI Gateway, `lab-ollama` as Model Server, Weaviate as Vector Store, your provider's API as External Model, grouped into an application discovered from traffic |
-| Days | Workload paths | Baselines that make new or deviating behaviour stand out |
+| Days | Workload paths | Baselines that make new or deviating behavior stand out |
 
 ## Be mindful of
 
@@ -65,7 +65,7 @@ whole chain works end to end.
 
 ## What you'll learn here
 
-- **Detection works on normal behaviour.** Nothing in the driver is an attack. The findings
+- **Detection works on normal behavior.** Nothing in the driver is an attack. The findings
   come from an ordinary support agent doing its job with an over-broad tool and an external
   model. That's the everyday risk most AI deployments carry.
 - **How the platform builds its picture.** First individual findings, then components and their

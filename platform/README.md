@@ -58,10 +58,18 @@ generator refuses to overwrite an existing Secret.
 
 Then continue with stage 2 (`lab/`).
 
+## Optional: internal ingress
+
+To reach Dify at a stable address instead of port-forward, add an internal ingress.
+`values/ingress-example.yaml` shows the settings. With Flux, put them in the HelmRelease
+(`spec.values`, or another `valuesFrom` entry) for your cluster; with plain Helm, pass the file
+with `EXTRA_VALUES` (below). Keep it internal (VPN or private network only).
+
 ## Plain Helm (without Flux)
 
 ```bash
 ./install-dify.sh dify-lab
+EXTRA_VALUES=my-ingress.yaml ./install-dify.sh dify-lab     # optionally, with your own extra values
 ```
 
 It creates `dify-secrets` if needed, then runs `helm upgrade --install` for the pinned chart with

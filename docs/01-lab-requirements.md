@@ -28,7 +28,7 @@ Approvals are almost always the long pole. Start them first; the hands-on lab ta
 
 ## Choosing a model provider
 
-Use whatever your organisation already approves. Only the chat model needs a provider; the
+Use whatever your organization already approves. Only the chat model needs a provider; the
 knowledge base's embeddings run locally in the cluster.
 
 | Provider | What you need | Notes |

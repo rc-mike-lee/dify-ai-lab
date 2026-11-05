@@ -1,0 +1,30 @@
+# OPTIONAL: reach Dify at a stable address instead of `kubectl port-forward`.
+# Copy this file, adjust it to your cluster, and pass it to the install:
+#   EXTRA_VALUES=my-ingress.yaml ./platform/install-dify.sh dify-lab
+#
+# Keep it INTERNAL (reachable over your VPN or private network only). Dify's sign-in page
+# and the lab's synthetic customer data shouldn't be exposed to the internet.
+#
+# What to change:
+#   className    your cluster's internal ingress class (`kubectl get ingressclass`)
+#   host         a DNS name you control, resolving to that ingress controller
+#   annotations  e.g. cert-manager's issuer, if you use cert-manager for TLS
+#   tls          the Secret name cert-manager (or you) will store the certificate in
+#
+# Dify's domain settings are left empty on purpose: it then uses relative URLs and works on
+# both the ingress host and port-forward.
+ingress:
+  enabled: true
+  className: nginx-internal
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 15m   # knowledge-base file uploads
+  hosts:
+    - host: dify-lab.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: dify-lab-tls
+      hosts:
+        - dify-lab.internal.example.com

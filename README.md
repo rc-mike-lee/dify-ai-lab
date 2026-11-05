@@ -60,7 +60,7 @@ All data is synthetic. Use a test environment only.
 
 ## 1. Namespace and model provider
 
-Pick the provider your organisation already uses. Only the chat model needs it; knowledge-base
+Pick the provider your organization already uses. Only the chat model needs it; knowledge-base
 embeddings always run locally on `lab-ollama`.
 
 | Provider | Config file | Credential | Status |
@@ -155,7 +155,9 @@ Menus are from Dify 1.16; other versions may differ slightly.
 3. **MCP server.** **Integrations → Tools → MCP → Add MCP Server (HTTP)**: URL
    `http://lab-mcp-crm:3000/mcp`, name *CRM*, server identifier `crm`. The card should show
    **3 tools** and a green dot.
-4. **The app.** **Studio → Create → Create from blank → Agent**, named *Customer Support Copilot*:
+4. **The app.** **Studio → Create → Create from blank → Agent**, named *Customer Support Copilot*.
+   A **LEGACY AGENT** badge on the app is expected in Dify 1.16 (it's promoting its newer, BETA
+   *Agents* builder); this lab uses the classic agent type, which works fully.
    - Model (top right): `copilot-model`
    - Instructions:
      ```text
@@ -191,9 +193,9 @@ Expect `HTTP 200`, tool calls including `lookup_customer`, and `result: ok`.
 |---|---|---|
 | 15–30 min | Analyst Console, namespace `dify-lab` | SHADOW-MCP-SERVER on `lab-mcp-crm`; SHADOW-LOCAL-INFERENCE on `lab-ollama`; AGENTIC-EXFIL and MODEL-OUTPUT-LEAK when customer data reaches the external model; PII exposure |
 | A few hours | Component Catalog; AI Applications | `lab-litellm` as AI Gateway, `lab-ollama` as Model Server, Weaviate as Vector Store, your provider's API as External Model, grouped into an application discovered from the traffic |
-| Days | Workload paths | Baselines: first-seen and deviating behaviour |
+| Days | Workload paths | Baselines: first-seen and deviating behavior |
 
-**Known behaviour**
+**Known behavior**
 
 - Downloads during setup (models, plugins) can open findings in the first hour. Triage them,
   or focus on findings opened after the first driver run.

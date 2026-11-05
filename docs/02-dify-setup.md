@@ -44,6 +44,25 @@ Install Dify, the open-source AI app platform the Copilot runs on.
    Go to http://localhost:8080, create the admin account on the first-run page, and store the
    password in your password manager.
 
+## Optional: reach Dify without port-forward
+
+Port-forward works everywhere but drops when idle and only works from your machine. For a
+stable address your team can share, add an **internal** ingress:
+
+1. Copy `platform/values/ingress-example.yaml` and set your ingress class, host name and TLS
+   (ask your platform team which internal ingress class and DNS domain to use).
+2. Re-run the install with it. This is a Helm upgrade; Dify's web and API pods restart
+   briefly, and data is kept:
+
+   ```bash
+   EXTRA_VALUES=my-ingress.yaml ./platform/install-dify.sh dify-lab
+   ```
+
+3. Open `https://<your host>` from the VPN or private network.
+
+Keep it internal. Dify's sign-in page and the lab's synthetic customer data shouldn't be
+reachable from the internet.
+
 ## Be mindful of
 
 - **Create `dify-secrets` once and keep it.** The Postgres and Redis passwords are fixed when the
